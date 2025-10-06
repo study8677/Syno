@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}我的人格库 · Syno{% endblock %}
+{% block content %}
+<div class="max-w-3xl space-y-6">
+  <div>
+    <h1 class="text-2xl font-semibold">我的人格库</h1>
+    <p class="text-gray-600">为你常用的多角色配置名字与提示词。提问或在问题页可用“用我的人格作答”批量生成。</p>
+  </div>
+
+  <form class="space-y-3" method="post" action="/me/personas">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div class="md:col-span-1">
+        <label class="block text-sm text-gray-600 mb-1">名称</label>
+        <input class="w-full rounded-lg border-gray-300 focus:border-brand focus:ring-brand" name="name" placeholder="如：学者/工程师/创作者…" required />
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-sm text-gray-600 mb-1">提示词</label>
+        <textarea class="w-full rounded-lg border-gray-300 focus:border-brand focus:ring-brand" name="prompt" rows="4" placeholder="角色的风格、能力范围、输出结构偏好…"></textarea>
+      </div>
+    </div>
+    <button class="inline-flex items-center px-4 py-2 rounded-md bg-brand text-white hover:opacity-90" type="submit">新增</button>
+  </form>
+
+  <div class="space-y-3">
+    {% for p in personas %}
+      <div class="rounded-lg border border-gray-200 bg-white p-4">
+        <div class="flex items-center justify-between">
+          <div class="font-medium">
+            {{ p.name }}
+            {% if p.is_active == 0 %}<span class="text-xs text-gray-500">(停用)</span>{% endif %}
+          </div>
+          <div class="flex items-center gap-2">
+            <form method="post" action="/me/personas/{{ p.id }}/toggle" class="inline">
+              <button class="px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit">{{ '启用' if p.is_active == 0 else '停用' }}</button>
+            </form>
+            <form method="post" action="/me/personas/{{ p.id }}/delete" class="inline" onsubmit="return confirm('确定删除该人格？')">
+              <button class="px-3 py-1.5 rounded-md border border-red-300 bg-white text-red-700 hover:bg-red-50" type="submit">删除</button>
+            </form>
+          </div>
+        </div>
+        <pre class="whitespace-pre-wrap text-gray-700 mt-2">{{ p.prompt }}</pre>
+      </div>
+    {% else %}
+      <div class="rounded-lg border border-gray-200 bg-white p-6 text-gray-500">还没有人格，先在上方添加一个吧。</div>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}

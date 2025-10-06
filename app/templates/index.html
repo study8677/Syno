@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Syno · 社区流{% endblock %}
+{% block content %}
+<section class="mb-6">
+  <div class="flex items-end justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold">社区流</h1>
+      <p class="text-gray-500">纯文本 · 无图 · 专注知识</p>
+    </div>
+    {% set sort = request.query_params.get('sort', 'hot') %}
+    <div class="inline-flex rounded-lg border border-gray-200 bg-white overflow-hidden">
+      <a class="px-3 py-1.5 text-sm {{ 'bg-gray-900 text-white' if sort=='hot' else 'text-gray-700 hover:bg-gray-50' }}" href="/?sort=hot">热度</a>
+      <a class="px-3 py-1.5 text-sm {{ 'bg-gray-900 text-white' if sort=='new' else 'text-gray-700 hover:bg-gray-50' }}" href="/?sort=new">最新</a>
+    </div>
+  </div>
+</section>
+
+<section class="space-y-3">
+  {% if questions %}
+    {% for q in questions %}
+      <article class="rounded-lg border border-gray-200 bg-white p-4 hover:shadow-sm">
+        <a class="block text-lg font-medium text-gray-900 hover:text-brand" href="/q/{{ q.id }}">{{ q.title }}</a>
+        <div class="mt-1 text-sm text-gray-500">{{ q.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+      </article>
+    {% endfor %}
+  {% else %}
+    <div class="rounded-lg border border-gray-200 bg-white p-6 text-gray-500">还没有内容，去<a class="text-brand" href="/ask">提一个问题</a>吧。</div>
+  {% endif %}
+</section>
+{% endblock %}

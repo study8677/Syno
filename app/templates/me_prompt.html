@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}我的人格 · Syno{% endblock %}
+{% block content %}
+<div class="max-w-2xl">
+  <h1 class="text-2xl font-semibold mb-2">我的人格预设</h1>
+  <p class="text-gray-600 mb-4">为你的回答配置偏好、语气和风格。生成时会作为一个独立人格参与。</p>
+  <form class="space-y-3" method="post" action="/me/prompt">
+    <textarea class="w-full rounded-lg border-gray-300 focus:border-brand focus:ring-brand" name="preset" rows="10" placeholder="例如：偏好结构化、短句、先结论后依据；强调可操作性与风险边界。">{{ user.prompt_preset or '' }}</textarea>
+    <div class="flex items-center gap-2">
+      <button class="inline-flex items-center px-4 py-2 rounded-md bg-brand text-white hover:opacity-90" type="submit">保存</button>
+      <a class="inline-flex items-center px-4 py-2 rounded-md border border-gray-300 bg-white hover:bg-gray-50" href="/">返回</a>
+      {% if saved %}<span class="text-sm text-gray-500">已保存</span>{% endif %}
+      {% if error %}<span class="text-sm text-red-600">{{ error }}</span>{% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

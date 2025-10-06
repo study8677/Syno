@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Syno{% endblock %}</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script>
+    tailwind.config = { theme: { extend: { colors: { brand: '#1e88e5' } } } }
+  </script>
+  <style>
+    .container-narrow { max-width: 980px; }
+  </style>
+</head>
+<body class="min-h-screen bg-gray-50 text-gray-900">
+  <header class="border-b bg-white/80 backdrop-blur sticky top-0 z-30">
+    <div class="mx-auto container-narrow px-4 py-3 flex items-center justify-between">
+      <a class="font-bold text-xl" href="/">Syno</a>
+      <nav class="flex items-center gap-3">
+        <a href="/ask" class="inline-flex items-center px-3 py-1.5 rounded-md bg-brand text-white hover:opacity-90">提问</a>
+        <a href="/ai" class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50">AI 设置</a>
+        {% if user %}
+          <a class="text-gray-600 hover:text-gray-900" href="/me/personas">我的人格</a>
+          <span class="text-gray-500">@{{ user.username }}</span>
+          <form method="post" action="/logout" class="inline">
+            <button class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit">退出</button>
+          </form>
+        {% else %}
+          <a class="text-gray-600 hover:text-gray-900" href="/login">登录</a>
+          <a class="text-gray-600 hover:text-gray-900" href="/signup">注册</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+  <main class="mx-auto container-narrow px-4 py-6">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="mx-auto container-narrow px-4 py-8 text-sm text-gray-500">
+    © Syno · 纯文本 AI 知识社区 · Beta
+  </footer>
+</body>
+</html>
