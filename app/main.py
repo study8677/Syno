@@ -1,4 +1,4 @@
-import os
+﻿import os
 from datetime import datetime
 from pathlib import Path
 
@@ -8,12 +8,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from .db import init_db
-from .auth import get_current_user, hash_password, verify_password
+from .auth import get_current_user, hash_password, verify_password, require_admin
 from .db import get_session
-from .models import User, Question, Answer, Consensus, Vote, VoteTarget, Comment
+from .models import User, Question, Answer, Vote, VoteTarget, Comment, Persona, PersonaHub
 from sqlalchemy.orm import Session
 from fastapi import BackgroundTasks
-from .services.generate import generate_for_question, generate_user_personas_for_question
+from .services.generate import (
+    generate_for_question,
+    generate_user_personas_for_question,
+    generate_comments_for_question,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -34,6 +38,18 @@ def create_app() -> FastAPI:
     async def _startup() -> None:
         # Initialize database tables
         init_db()
+        # Purge legacy consensus data (feature removed)
+        try:
+            from .db import SessionLocal as _SL
+            from .models import Consensus as _C
+            s = _SL()
+            try:
+                s.query(_C).delete()
+                s.commit()
+            finally:
+                s.close()
+        except Exception:
+            pass
 
     @app.get("/", response_class=HTMLResponse)
     async def home(request: Request, db: Session = Depends(get_session), user=Depends(get_current_user)):
@@ -65,6 +81,107 @@ def create_app() -> FastAPI:
             "index.html",
             {"request": request, "questions": qs_sorted, "user": user},
         )
+
+    # --- Persona hub ---
+    @app.get("/personas", response_class=HTMLResponse)
+    async def personas_index(request: Request, db: Session = Depends(get_session), user=Depends(get_current_user)):
+        sort = request.query_params.get("sort", "hot")
+        qstr = (request.query_params.get("q") or "").strip()
+        mine = request.query_params.get("mine") == "1"
+
+        query = db.query(PersonaHub)
+        if qstr:
+            try:
+                from sqlalchemy import or_
+                query = query.filter(or_(PersonaHub.name.contains(qstr), PersonaHub.prompt.contains(qstr)))
+            except Exception:
+                pass
+        if mine and user:
+            query = query.filter(PersonaHub.source_user_id == user.id)
+
+        items = query.order_by(PersonaHub.created_at.desc()).all()
+
+        # compute likes/liked_by_me via votes
+        likes_map = {
+            it.id: sum(v for (v,) in db.query(Vote.value).filter(Vote.target_type == VoteTarget.persona, Vote.target_id == it.id).all())
+            for it in items
+        }
+        liked_by_me = set(
+            [hid for (hid,) in db.query(Vote.target_id).filter(user is not None, Vote.user_id == (user.id if user else 0), Vote.target_type == VoteTarget.persona, Vote.value == 1).all()]
+        ) if user else set()
+
+        data = [
+            {
+                "id": it.id,
+                "name": it.name,
+                "prompt": it.prompt,
+                "owner": it.owner,
+                "uses": it.uses_count,
+                "likes": likes_map.get(it.id, 0),
+                "liked": it.id in liked_by_me,
+            }
+            for it in items
+        ]
+        if sort == "hot":
+            data.sort(key=lambda x: (x["likes"] * 2 + x["uses"]), reverse=True)
+        return templates.TemplateResponse("personas_index.html", {"request": request, "items": data, "sort": sort, "q": qstr, "mine": mine, "user": user})
+
+    @app.get("/personas/share", response_class=HTMLResponse)
+    async def personas_share_get(request: Request, db: Session = Depends(get_session), user=Depends(get_current_user)):
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        ps = db.query(Persona).filter(Persona.user_id == user.id).order_by(Persona.id.desc()).all()
+        return templates.TemplateResponse("personas_share.html", {"request": request, "user": user, "personas": ps})
+
+    @app.post("/personas/share")
+    async def personas_share_post(request: Request, pid: int | None = Form(None), name: str | None = Form(None), prompt: str | None = Form(None), db: Session = Depends(get_session), user=Depends(get_current_user)):
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        src = None
+        if pid:
+            src = db.query(Persona).filter(Persona.id == pid, Persona.user_id == user.id).one_or_none()
+        pname = (name or (src.name if src else "鎴戠殑浜烘牸")).strip()[:50]
+        pprompt = (prompt or (src.prompt if src else (user.prompt_preset or ""))).strip()
+        if not pprompt:
+            pprompt = "锛堢┖锛?
+        hub = PersonaHub(source_user_id=user.id, name=pname, prompt=pprompt)
+        db.add(hub)
+        db.commit()
+        return RedirectResponse(url="/personas", status_code=302)
+
+    @app.post("/personas/{hid}/use")
+    async def personas_use(request: Request, hid: int, db: Session = Depends(get_session), user=Depends(get_current_user)):
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        item = db.get(PersonaHub, hid)
+        if not item:
+            return RedirectResponse(url="/personas", status_code=302)
+        # copy to user's personas
+        p = Persona(user_id=user.id, name=f"{item.name}", prompt=item.prompt, is_active=1)
+        db.add(p)
+        # bump uses
+        item.uses_count = (item.uses_count or 0) + 1
+        db.add(item)
+        db.commit()
+        return RedirectResponse(url="/me/personas", status_code=302)
+
+    @app.post("/personas/{hid}/like")
+    async def personas_like(request: Request, hid: int, db: Session = Depends(get_session), user=Depends(get_current_user)):
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        v = (
+            db.query(Vote)
+            .filter(Vote.user_id == user.id, Vote.target_type == VoteTarget.persona, Vote.target_id == hid)
+            .one_or_none()
+        )
+        if v:
+            v.value = 0 if v.value == 1 else 1
+        else:
+            v = Vote(user_id=user.id, target_type=VoteTarget.persona, target_id=hid, value=1)
+            db.add(v)
+        db.commit()
+        referer = request.headers.get("referer") or "/personas"
+        return RedirectResponse(url=referer, status_code=302)
 
     @app.get("/ask", response_class=HTMLResponse)
     async def ask_get(request: Request, user=Depends(get_current_user)):
@@ -107,7 +224,7 @@ def create_app() -> FastAPI:
         if not user or not verify_password(password, user.password_hash):
             return templates.TemplateResponse(
                 "login.html",
-                {"request": request, "error": "用户名或密码错误"},
+                {"request": request, "error": "鐢ㄦ埛鍚嶆垨瀵嗙爜閿欒"},
                 status_code=400,
             )
         request.session["user_id"] = int(user.id)
@@ -128,7 +245,7 @@ def create_app() -> FastAPI:
         if exists:
             return templates.TemplateResponse(
                 "signup.html",
-                {"request": request, "error": "用户名已存在"},
+                {"request": request, "error": "鐢ㄦ埛鍚嶅凡瀛樺湪"},
                 status_code=400,
             )
         user = User(username=username, password_hash=hash_password(password))
@@ -151,6 +268,11 @@ def create_app() -> FastAPI:
         has_key = bool(cfg.get("api_key"))
         if has_key:
             cfg = {**cfg, "api_key": ""}
+        # defaults for context cfg
+        # Default both to 鍏辫瘑+Top-K锛岄伩鍏嶇敤鎴峰拷鐣ュ紑鍏?        cfg.setdefault("answer_ctx", cfg.get("answer_ctx", "both"))
+        cfg.setdefault("comment_ctx", cfg.get("comment_ctx", "both"))
+        cfg.setdefault("ctx_topk", cfg.get("ctx_topk", 2))
+        cfg.setdefault("ctx_snippet", cfg.get("ctx_snippet", 200))
         return templates.TemplateResponse("ai_settings.html", {"request": request, "cfg": cfg, "has_key": has_key, "user": user})
 
     @app.post("/ai", response_class=HTMLResponse)
@@ -162,6 +284,10 @@ def create_app() -> FastAPI:
         base_url: str | None = Form(None),
         api_key: str | None = Form(None),
         temperature: float = Form(0.4),
+        answer_ctx: str = Form("none"),
+        comment_ctx: str = Form("consensus"),
+        ctx_topk: int = Form(2),
+        ctx_snippet: int = Form(200),
         user=Depends(get_current_user),
     ):
         cfg = {
@@ -171,6 +297,11 @@ def create_app() -> FastAPI:
             "base_url": base_url or None,
             "api_key": api_key or request.session.get("llm_cfg", {}).get("api_key"),  # keep existing if left blank
             "temperature": temperature,
+            # context settings
+            "answer_ctx": answer_ctx,
+            "comment_ctx": comment_ctx,
+            "ctx_topk": ctx_topk,
+            "ctx_snippet": ctx_snippet,
         }
         request.session["llm_cfg"] = cfg
         return templates.TemplateResponse("ai_settings.html", {"request": request, "cfg": {**cfg, "api_key": ""}, "has_key": bool(cfg["api_key"]), "saved": True, "user": user})
@@ -179,15 +310,15 @@ def create_app() -> FastAPI:
     async def ai_settings_test(request: Request, user=Depends(get_current_user)):
         # quick round-trip test
         override_cfg = request.session.get("llm_cfg")
-        title = "Syno 连接性测试"
-        content = "请输出一段不超过30字的中文短句，证明接口可用。"
+        title = "Syno 杩炴帴鎬ф祴璇?
+        content = "璇疯緭鍑轰竴娈典笉瓒呰繃30瀛楃殑涓枃鐭彞锛岃瘉鏄庢帴鍙ｅ彲鐢ㄣ€?
         from .services.llm import LLMClient, config_from_dict
         client = LLMClient(config_from_dict(override_cfg))
         try:
-            text = await client.generate_answer("测试员", title, content)
+            text = await client.generate_answer("娴嬭瘯鍛?, title, content)
             ok = True
         except Exception as e:
-            text = f"调用失败：{e}"
+            text = f"璋冪敤澶辫触锛歿e}"
             ok = False
         cfg = {**(override_cfg or {}), "api_key": ""}
         return templates.TemplateResponse("ai_settings.html", {"request": request, "cfg": cfg, "has_key": bool((override_cfg or {}).get("api_key")), "user": user, "test_result": text, "test_ok": ok})
@@ -214,7 +345,6 @@ def create_app() -> FastAPI:
         if not q:
             return RedirectResponse(url="/", status_code=302)
         answers = db.query(Answer).filter(Answer.question_id == q.id).order_by(Answer.quality_score.desc()).all()
-        consensus = db.query(Consensus).filter(Consensus.question_id == q.id).one_or_none()
         # simple vote score aggregation
         def score_for(target_type: VoteTarget, target_id: int) -> int:
             return (
@@ -233,18 +363,24 @@ def create_app() -> FastAPI:
         for c in comments:
             if c.parent_id:
                 children.setdefault(c.parent_id, []).append(c)
+        # my personas for selection UI
+        my_personas = []
+        if user:
+            from .models import Persona
+            my_personas = db.query(Persona).filter(Persona.user_id == user.id).order_by(Persona.id.desc()).all()
 
+        # Can we generate consensus?
         return templates.TemplateResponse(
             "question_detail.html",
             {
                 "request": request,
                 "question": q,
-                "consensus": consensus,
                 "answers": answers,
                 "q_score": q_score,
                 "a_scores": a_scores,
                 "comments_top": top,
                 "comments_children": children,
+                "my_personas": my_personas,
                 "user": user,
             },
         )
@@ -278,6 +414,7 @@ def create_app() -> FastAPI:
         background_tasks: BackgroundTasks,
         db: Session = Depends(get_session),
         user=Depends(get_current_user),
+        persona_ids: list[str] | None = Form(None),
     ):
         if not user:
             return RedirectResponse(url="/login", status_code=302)
@@ -285,7 +422,7 @@ def create_app() -> FastAPI:
         if not q:
             return RedirectResponse(url="/", status_code=302)
         override_cfg = request.session.get("llm_cfg")
-        background_tasks.add_task(generate_user_personas_for_question, q.id, int(user.id), override_cfg)
+        background_tasks.add_task(generate_user_personas_for_question, q.id, int(user.id), override_cfg, persona_ids)
         return RedirectResponse(url=f"/q/{q.id}", status_code=302)
 
     # Personas management
@@ -306,6 +443,8 @@ def create_app() -> FastAPI:
         db.add(p)
         db.commit()
         return RedirectResponse(url="/me/personas", status_code=302)
+
+    # consensus removed
 
     @app.post("/me/personas/{pid}/delete")
     async def me_personas_delete(request: Request, pid: int, db: Session = Depends(get_session), user=Depends(get_current_user)):
@@ -352,7 +491,9 @@ def create_app() -> FastAPI:
             .one_or_none()
         )
         if v:
-            v.value = int(value)
+            # Toggle behavior: clicking the same choice again clears the vote
+            iv = int(value)
+            v.value = 0 if v.value == iv else iv
         else:
             v = Vote(user_id=user.id, target_type=ttype, target_id=int(target_id), value=int(value))
             db.add(v)
@@ -371,29 +512,138 @@ def create_app() -> FastAPI:
         db: Session = Depends(get_session),
         user=Depends(get_current_user),
     ):
-        if not user:
-            return RedirectResponse(url="/login", status_code=302)
-        try:
-            ttype = VoteTarget(target_type)
-        except Exception:
-            return RedirectResponse(url="/", status_code=302)
-        text = (content or "").strip()
-        if not text:
-            referer = request.headers.get("referer") or "/"
-            return RedirectResponse(url=referer, status_code=302)
-        c = Comment(
-            user_id=user.id,
-            target_type=ttype,
-            target_id=int(target_id),
-            parent_id=int(parent_id) if parent_id else None,
-            content=text[:4000],
-        )
-        db.add(c)
-        db.commit()
+        # 绂佹鎵嬪伐璇勮锛氱粺涓€閫氳繃 AI 鐢熸垚
         referer = request.headers.get("referer") or "/"
         return RedirectResponse(url=referer, status_code=302)
+
+    @app.post("/q/{qid}/comment/ai")
+    async def comment_ai(
+        request: Request,
+        qid: int,
+        background_tasks: BackgroundTasks,
+        user=Depends(get_current_user),
+        persona_id: str | None = Form(None),
+    ):
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        override_cfg = request.session.get("llm_cfg")
+        # 鐩存帴绛夊緟鐢熸垚锛岀偣鍑诲悗鍗冲彲鐪嬪埌缁撴灉
+        await generate_comments_for_question(qid, int(user.id), None, override_cfg, persona_id)
+        return RedirectResponse(url=f"/q/{qid}", status_code=302)
+
+    @app.post("/comment/{cid}/reply/ai")
+    async def comment_reply_ai(
+        request: Request,
+        cid: int,
+        background_tasks: BackgroundTasks,
+        db: Session = Depends(get_session),
+        user=Depends(get_current_user),
+        persona_id: str | None = Form(None),
+    ):
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        c = db.get(Comment, cid)
+        if not c:
+            return RedirectResponse(url="/", status_code=302)
+        override_cfg = request.session.get("llm_cfg")
+        await generate_comments_for_question(int(c.target_id), int(user.id), int(cid), override_cfg, persona_id)
+        return RedirectResponse(url=f"/q/{c.target_id}", status_code=302)
+
+    # --- Admin (requires SYNO_ADMIN_USERS contain username) ---
+    @app.get("/admin", response_class=HTMLResponse)
+    async def admin_index(request: Request, tab: str = "questions", q: str | None = None, db: Session = Depends(get_session), user=Depends(require_admin)):
+        headers = []
+        rows = []
+        query_str = (q or "").strip()
+        if tab == "users":
+            items = db.query(User).order_by(User.id.desc()).all()
+            if query_str:
+                items = [u for u in items if query_str in u.username]
+            headers = ["ID", "用户名", "创建时间"]
+            for u in items[:200]:
+                rows.append({"cells": [u.id, u.username, getattr(u, 'created_at', '')], "delete_action": None})
+        elif tab == "answers":
+            items = db.query(Answer).order_by(Answer.id.desc()).limit(200).all()
+            if query_str:
+                items = [a for a in items if query_str in (a.content or '')]
+            headers = ["ID", "QID", "人格", "质量", "内容"]
+            for a in items:
+                body = (a.content or '')
+                short = body[:120] + ('…' if len(body) > 120 else '')
+                rows.append({"cells": [a.id, a.question_id, a.persona, a.quality_score, short], "delete_action": f"/admin/delete/answer/{a.id}"})
+        elif tab == "comments":
+            items = db.query(Comment).order_by(Comment.id.desc()).limit(200).all()
+            if query_str:
+                items = [c for c in items if query_str in (c.content or '')]
+            headers = ["ID", "目标", "父ID", "内容"]
+            for c in items:
+                body = (c.content or '')
+                short = body[:120] + ('…' if len(body) > 120 else '')
+                rows.append({"cells": [c.id, f"{c.target_type}:{c.target_id}", c.parent_id or '-', short], "delete_action": f"/admin/delete/comment/{c.id}"})
+        elif tab == "personas":
+            items = db.query(Persona).order_by(Persona.id.desc()).limit(200).all()
+            if query_str:
+                items = [p for p in items if query_str in p.name or query_str in (p.prompt or '')]
+            headers = ["ID", "用户", "名称", "状态", "提示词"]
+            for p in items:
+                body = (p.prompt or '')
+                short = body[:120] + ('…' if len(body) > 120 else '')
+                rows.append({"cells": [p.id, p.user_id, p.name, ("启用" if getattr(p, 'is_active', 1) else "停用"), short], "delete_action": f"/admin/delete/persona/{p.id}"})
+        elif tab == "hub":
+            items = db.query(PersonaHub).order_by(PersonaHub.id.desc()).limit(200).all()
+            if query_str:
+                items = [h for h in items if query_str in h.name or query_str in (h.prompt or '')]
+            headers = ["ID", "作者", "名称", "使用", "提示词"]
+            for h in items:
+                body = (h.prompt or '')
+                short = body[:120] + ('…' if len(body) > 120 else '')
+                rows.append({"cells": [h.id, h.source_user_id, h.name, h.uses_count, short], "delete_action": f"/admin/delete/hub/{h.id}"})
+        else:
+            items = db.query(Question).order_by(Question.id.desc()).limit(200).all()
+            if query_str:
+                items = [qq for qq in items if query_str in (qq.title or '') or query_str in (qq.content or '')]
+            headers = ["ID", "标题", "内容", "创建时间"]
+            for qq in items:
+                body = (qq.content or '')
+                short = body[:120] + ('…' if len(body) > 120 else '')
+                rows.append({"cells": [qq.id, qq.title, short, getattr(qq, 'created_at', '')], "delete_action": f"/admin/delete/question/{qq.id}"})
+
+        return templates.TemplateResponse("admin_index.html", {"request": request, "user": user, "tab": tab, "q": query_str, "headers": headers, "rows": rows})
+
+    @app.post("/admin/delete/question/{qid}")
+    async def admin_delete_question(request: Request, qid: int, db: Session = Depends(get_session), user=Depends(require_admin)):
+        db.query(Answer).filter(Answer.question_id == qid).delete()
+        db.query(Comment).filter(Comment.target_type == VoteTarget.question, Comment.target_id == qid).delete()
+        db.query(Question).filter(Question.id == qid).delete()
+        db.commit()
+        return RedirectResponse(url="/admin?tab=questions", status_code=302)
+
+    @app.post("/admin/delete/answer/{aid}")
+    async def admin_delete_answer(request: Request, aid: int, db: Session = Depends(get_session), user=Depends(require_admin)):
+        db.query(Answer).filter(Answer.id == aid).delete()
+        db.commit()
+        return RedirectResponse(url="/admin?tab=answers", status_code=302)
+
+    @app.post("/admin/delete/comment/{cid}")
+    async def admin_delete_comment(request: Request, cid: int, db: Session = Depends(get_session), user=Depends(require_admin)):
+        db.query(Comment).filter(Comment.id == cid).delete()
+        db.commit()
+        return RedirectResponse(url="/admin?tab=comments", status_code=302)
+
+    @app.post("/admin/delete/persona/{pid}")
+    async def admin_delete_persona(request: Request, pid: int, db: Session = Depends(get_session), user=Depends(require_admin)):
+        db.query(Persona).filter(Persona.id == pid).delete()
+        db.commit()
+        return RedirectResponse(url="/admin?tab=personas", status_code=302)
+
+    @app.post("/admin/delete/hub/{hid}")
+    async def admin_delete_hub(request: Request, hid: int, db: Session = Depends(get_session), user=Depends(require_admin)):
+        db.query(PersonaHub).filter(PersonaHub.id == hid).delete()
+        db.commit()
+        return RedirectResponse(url="/admin?tab=hub", status_code=302)
 
     return app
 
 
 app = create_app()
+

@@ -8,36 +8,58 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="/static/styles.css" />
   <script>
-    tailwind.config = { theme: { extend: { colors: { brand: '#1e88e5' } } } }
+    tailwind.config = { theme: { extend: { colors: { brand: '#1781ea', brand2:'#1059a8' } } } }
   </script>
   <style>
-    .container-narrow { max-width: 980px; }
+    .container-narrow { max-width: 1000px; }
   </style>
 </head>
 <body class="min-h-screen bg-gray-50 text-gray-900">
-  <header class="border-b bg-white/80 backdrop-blur sticky top-0 z-30">
-    <div class="mx-auto container-narrow px-4 py-3 flex items-center justify-between">
-      <a class="font-bold text-xl" href="/">Syno</a>
-      <nav class="flex items-center gap-3">
-        <a href="/ask" class="inline-flex items-center px-3 py-1.5 rounded-md bg-brand text-white hover:opacity-90">提问</a>
-        <a href="/ai" class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50">AI 设置</a>
+  <header class="border-b bg-white sticky top-0 z-30">
+    <div class="mx-auto container-narrow px-4 py-3 grid grid-cols-12 gap-4 items-center">
+      <div class="col-span-2 flex items-center gap-3">
+        <a class="font-bold text-2xl text-brand" href="/">Syno</a>
+      </div>
+      <div class="col-span-7">
+        <form action="/" method="get" class="hidden md:block">
+          <input name="q" class="w-full rounded-full border border-gray-200 bg-gray-100 px-4 py-2 focus:border-brand focus:ring-brand" placeholder="搜索问题 / 话题（占位，无检索）" />
+        </form>
+      </div>
+      <nav class="col-span-3 flex items-center justify-end gap-2">
+        <a href="/ask" class="inline-flex items-center px-4 py-2 rounded-full bg-brand text-white hover:bg-brand2">提问</a>
+        <a href="/ai" class="hidden md:inline-flex items-center px-3 py-2 rounded-full border border-gray-200 bg-white hover:bg-gray-50">AI</a>
+        <details class="relative hidden md:block">
+          <summary class="list-none inline-flex items-center px-3 py-2 rounded-full border border-gray-200 bg-white hover:bg-gray-50 cursor-pointer">人格</summary>
+          <div class="absolute right-0 mt-2 w-40 rounded-xl border border-gray-200 bg-white shadow-lg p-2 z-50">
+            <a class="block px-3 py-2 rounded-lg hover:bg-gray-50" href="/personas">人格广场</a>
+            <a class="block px-3 py-2 rounded-lg hover:bg-gray-50" href="/me/personas">我的人格</a>
+          </div>
+        </details>
         {% if user %}
-          <a class="text-gray-600 hover:text-gray-900" href="/me/personas">我的人格</a>
-          <span class="text-gray-500">@{{ user.username }}</span>
+          <span class="text-gray-500 hidden md:inline">@{{ user.username }}</span>
+          <a class="hidden md:inline-flex items-center px-3 py-2 rounded-full border border-gray-200 bg-white hover:bg-gray-50" href="/admin">管理</a>
           <form method="post" action="/logout" class="inline">
-            <button class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit">退出</button>
+            <button class="inline-flex items-center px-3 py-2 rounded-full border border-gray-200 bg-white hover:bg-gray-50" type="submit">退出</button>
           </form>
         {% else %}
-          <a class="text-gray-600 hover:text-gray-900" href="/login">登录</a>
-          <a class="text-gray-600 hover:text-gray-900" href="/signup">注册</a>
+          <a class="text-gray-700 hover:text-gray-900" href="/login">登录</a>
+          <a class="text-gray-700 hover:text-gray-900" href="/signup">注册</a>
         {% endif %}
       </nav>
     </div>
+    <div class="border-t bg-white">
+      <div class="mx-auto container-narrow px-4">
+        <div class="flex items-center gap-5 text-sm">
+          <a href="/?sort=hot" class="py-2 {{ 'text-brand border-b-2 border-brand' if request.query_params.get('sort','hot')=='hot' else 'text-gray-600 hover:text-gray-900' }}">热度</a>
+          <a href="/?sort=new" class="py-2 {{ 'text-brand border-b-2 border-brand' if request.query_params.get('sort','hot')=='new' else 'text-gray-600 hover:text-gray-900' }}">最新</a>
+        </div>
+      </div>
+    </div>
   </header>
-  <main class="mx-auto container-narrow px-4 py-6">
+  <main class="mx-auto container-narrow px-4 py-6 grid grid-cols-12 gap-6">
     {% block content %}{% endblock %}
   </main>
-  <footer class="mx-auto container-narrow px-4 py-8 text-sm text-gray-500">
+  <footer class="mx-auto container-narrow px-4 py-10 text-sm text-gray-500">
     © Syno · 纯文本 AI 知识社区 · Beta
   </footer>
 </body>

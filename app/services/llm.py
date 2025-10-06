@@ -115,6 +115,21 @@ class LLMClient:
         else:
             return self._fake_consensus(title, answers)
 
+    async def generate_comment(
+        self,
+        persona: str,
+        title: str,
+        content: Optional[str] = None,
+        reply_to: Optional[str] = None,
+        user_preset: Optional[str] = None,
+    ) -> str:
+        if self.cfg.provider == "fake":
+            return self._fake_comment(persona, title, content, reply_to, user_preset)
+        elif self.cfg.provider in {"openai", "compat"}:
+            return await self._openai_like_comment(persona, title, content, reply_to, user_preset)
+        else:
+            return self._fake_comment(persona, title, content, reply_to, user_preset)
+
     # --- Providers ---
     def _fake_answer(
         self, persona: str, title: str, content: Optional[str], user_preset: Optional[str]
@@ -144,6 +159,17 @@ class LLMClient:
             "summary": summary,
         }
 
+    def _fake_comment(
+        self, persona: str, title: str, content: Optional[str], reply_to: Optional[str], user_preset: Optional[str]
+    ) -> str:
+        base = f"（{persona}）简评："
+        tail = "建议关注关键点与可执行步骤。"
+        if reply_to:
+            body = f"赞同要点，补充：保持礼貌与边界。"
+        else:
+            body = f"围绕《{title}》给出简短观点。"
+        return base + body + " " + tail
+
     async def _openai_like_answer(
         self, persona: str, title: str, content: Optional[str], user_preset: Optional[str]
     ) -> str:
@@ -153,6 +179,7 @@ class LLMClient:
         system = (
             f"你是{persona}。以纯文本、结构化、条理清晰的风格回答问题。"
             "不输出图片或链接，优先给出可执行的步骤。"
+            "若提供了[背景]内容，可参考但保持独立判断。"
         )
         if user_preset:
             system += f" 用户自定义偏好：{user_preset}。"
@@ -193,3 +220,72 @@ class LLMClient:
             "divergence": pick("分歧"),
             "summary": pick("小结"),
         }
+
+    async def _openai_like_comment(
+        self,
+        persona: str,
+        title: str,
+        content: Optional[str],
+        reply_to: Optional[str],
+        user_preset: Optional[str],
+    ) -> str:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=self.cfg.api_key, base_url=self.cfg.base_url)
+        sys = (
+            f"你是{persona}，请以中文、简洁礼貌的‘评论’语气输出，不超过80字。"
+            "若提供了[背景]内容，作为上下文参考；如为二级回复，请针对被回复内容作答。"
+        )
+        if user_preset:
+            sys += f" 用户偏好：{user_preset}。"
+        if reply_to:
+            user_msg = f"问题：{title}\n（可选补充）{content or ''}\n被回复内容：{reply_to}"
+        else:
+            user_msg = f"问题：{title}\n（可选补充）{content or ''}"
+        resp = await client.chat.completions.create(
+            model=self.cfg.model,
+            messages=[{"role": "system", "content": sys}, {"role": "user", "content": user_msg}],
+            temperature=min(0.9, max(0.0, self.cfg.temperature)),
+        )
+        return resp.choices[0].message.content or ""
+
+    # --- Quality evaluation ---
+    async def evaluate_quality(self, title: str, content: str, answer: str) -> int:
+        if self.cfg.provider == "fake":
+            return self._fake_evaluate(answer)
+        elif self.cfg.provider in {"openai", "compat"}:
+            return await self._openai_like_evaluate(title, content, answer)
+        else:
+            return self._fake_evaluate(answer)
+
+    def _fake_evaluate(self, answer: str) -> int:
+        from .ranking import quality_score as heuristic
+        return int(heuristic(answer))
+
+    async def _openai_like_evaluate(self, title: str, content: str, answer: str) -> int:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=self.cfg.api_key, base_url=self.cfg.base_url)
+        sys = (
+            "你是一名严格的内容评审。根据评分规则对回答进行打分，"
+            "返回一个0到100的整数分数，不要解释。评分要考虑：结构化清晰度、正确性/合理性、可执行性、边界与风险提示、表达精炼度。"
+        )
+        user_msg = (
+            f"问题：{title}\n背景：{content[:800]}\n回答：\n{answer[:4000]}\n"
+            "请只输出一个0..100的整数，不要包含其他文字。"
+        )
+        try:
+            resp = await client.chat.completions.create(
+                model=self.cfg.model,
+                messages=[{"role": "system", "content": sys}, {"role": "user", "content": user_msg}],
+                temperature=0.0,
+            )
+            txt = resp.choices[0].message.content or ""
+        except Exception:
+            return 60
+        import re
+        m = re.search(r"(\d{1,3})", txt)
+        if not m:
+            return 60
+        n = int(m.group(1))
+        return max(0, min(100, n))

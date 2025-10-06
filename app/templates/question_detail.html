@@ -1,128 +1,134 @@
 {% extends "base.html" %}
 {% block title %}问题详情 · Syno{% endblock %}
 {% block content %}
-<article class="mb-6">
-  <h1 class="text-2xl font-semibold">{{ question.title }}</h1>
-  {% if question.content %}
-    <p class="text-gray-600 mt-2">{{ question.content }}</p>
-  {% endif %}
-  <div class="text-sm text-gray-500 mt-1 flex items-center gap-3">
-    <div>{{ question.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
-    <form method="post" action="/vote" class="inline-flex items-center gap-2">
-      <input type="hidden" name="target_type" value="question" />
-      <input type="hidden" name="target_id" value="{{ question.id }}" />
-      <button class="px-2 py-0.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit" name="value" value="1">赞同</button>
-      <button class="px-2 py-0.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit" name="value" value="-1">反对</button>
-      <button class="px-2 py-0.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit" name="value" value="0">清除</button>
-      {% if q_score is defined %}<span class="text-gray-500">得分 {{ q_score }}</span>{% endif %}
-    </form>
-  </div>
-</article>
-
-<section class="mb-6">
-  <div class="flex items-center justify-between mb-3">
-    <h2 class="text-xl font-semibold">共识回答</h2>
-    <form method="post" action="/q/{{ question.id }}/regen">
-      <button class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit">用当前 AI 设置重生成</button>
-    </form>
-  </div>
-  {% if consensus %}
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <div class="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 class="font-medium text-gray-800">结论</h3>
-        <p class="mt-1 whitespace-pre-wrap">{{ consensus.conclusion }}</p>
-      </div>
-      <div class="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 class="font-medium text-gray-800">依据</h3>
-        <p class="mt-1 whitespace-pre-wrap">{{ consensus.evidence }}</p>
-      </div>
-      <div class="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 class="font-medium text-gray-800">分歧</h3>
-        <p class="mt-1 whitespace-pre-wrap">{{ consensus.divergence }}</p>
-      </div>
-      <div class="rounded-lg border border-gray-200 bg-white p-4">
-        <h3 class="font-medium text-gray-800">小结</h3>
-        <p class="mt-1 whitespace-pre-wrap">{{ consensus.summary }}</p>
-      </div>
+<div class="col-span-12 md:col-span-8 space-y-6">
+  <article class="rounded-xl border border-gray-200 bg-white p-6">
+    <h1 class="text-2xl font-semibold">{{ question.title }}</h1>
+    {% if question.content %}
+      <p class="text-gray-700 mt-2">{{ question.content }}</p>
+    {% endif %}
+    <div class="text-sm text-gray-500 mt-2 flex items-center gap-3">
+      <div>{{ question.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+      <form method="post" action="/vote" class="inline-flex items-center gap-2">
+        <input type="hidden" name="target_type" value="question" />
+        <input type="hidden" name="target_id" value="{{ question.id }}" />
+        <button class="px-2 py-1 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit" name="value" value="1">赞同</button>
+        <button class="px-2 py-1 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit" name="value" value="-1">反对</button>
+        
+        {% if q_score is defined %}<span class="text-gray-500">得分 {{ q_score }}</span>{% endif %}
+      </form>
     </div>
-  {% else %}
-    <div class="rounded-lg border border-gray-200 bg-white p-4 text-gray-500">生成中……请稍后刷新。</div>
-  {% endif %}
+  </article>
+
   
-</section>
 
-<section class="mb-6">
-  <div class="flex items-center justify-between mb-3">
-    <h2 class="text-xl font-semibold">多角色答案</h2>
-    <form method="post" action="/q/{{ question.id }}/answer/mine">
-      <button class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit">用我的人格作答</button>
-    </form>
-  </div>
-  {% if answers %}
-    <div class="space-y-3">
-      {% for a in answers %}
-        <article class="rounded-lg border border-gray-200 bg-white p-4">
-          <div class="flex items-center justify-between">
-            <div class="font-medium">{{ a.persona }}</div>
-            <div class="text-sm text-gray-500">质量 {{ '%.0f'|format(a.quality_score) }}</div>
-          </div>
-          <pre class="whitespace-pre-wrap mt-2 text-gray-800">{{ a.content }}</pre>
-          <form method="post" action="/vote" class="mt-3 inline-flex items-center gap-2">
-            <input type="hidden" name="target_type" value="answer" />
-            <input type="hidden" name="target_id" value="{{ a.id }}" />
-            <button class="px-2 py-0.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit" name="value" value="1">赞</button>
-            <button class="px-2 py-0.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit" name="value" value="-1">踩</button>
-            <button class="px-2 py-0.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit" name="value" value="0">清</button>
-            {% if a_scores and a_scores.get(a.id) is not none %}
-              <span class="text-gray-500">得分 {{ a_scores.get(a.id) }}</span>
-            {% endif %}
-          </form>
-        </article>
-      {% endfor %}
-    </div>
-  {% else %}
-    <div class="rounded-lg border border-gray-200 bg-white p-4 text-gray-500">生成中……</div>
-  {% endif %}
-</section>
-
-<section>
-  <h2 class="text-xl font-semibold mb-3">评论</h2>
-  <form class="space-y-2 mb-4" method="post" action="/comment">
-    <input type="hidden" name="target_type" value="question" />
-    <input type="hidden" name="target_id" value="{{ question.id }}" />
-    <textarea class="w-full rounded-lg border-gray-300 focus:border-brand focus:ring-brand" name="content" rows="3" placeholder="发表你的看法（纯文本，支持两级回复）"></textarea>
-    <button class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit">发表评论</button>
-  </form>
-
-  {% if comments_top %}
-    <div class="space-y-3">
-      {% for c in comments_top %}
-        <div class="rounded-lg border border-gray-200 bg-white p-3">
-          <div class="text-sm text-gray-500">@{{ c.author.username if c.author else '匿名' }} · {{ c.created_at.strftime('%m-%d %H:%M') }}</div>
-          <div class="mt-1">{{ c.content }}</div>
-          <form method="post" action="/comment" class="mt-2 flex items-center gap-2">
-            <input type="hidden" name="target_type" value="question" />
-            <input type="hidden" name="target_id" value="{{ question.id }}" />
-            <input type="hidden" name="parent_id" value="{{ c.id }}" />
-            <input class="flex-1 rounded-lg border-gray-300 focus:border-brand focus:ring-brand" type="text" name="content" placeholder="回复…" />
-            <button class="px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit">回复</button>
-          </form>
-          {% if comments_children and comments_children.get(c.id) %}
-            <div class="mt-2 space-y-2">
-              {% for r in comments_children.get(c.id) %}
-                <div class="rounded-md border border-gray-200 bg-gray-50 p-2">
-                  <div class="text-sm text-gray-500">@{{ r.author.username if r.author else '匿名' }} · {{ r.created_at.strftime('%m-%d %H:%M') }}</div>
-                  <div class="mt-1">{{ r.content }}</div>
-                </div>
-              {% endfor %}
-            </div>
-          {% endif %}
+  <section class="rounded-xl border border-gray-200 bg-white p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-semibold">多角色答案</h2>
+      {% if user %}
+      <form method="post" action="/q/{{ question.id }}/answer/mine" class="flex items-center gap-2">
+        <div class="hidden md:flex items-center gap-2 text-sm text-gray-600">
+          <label><input type="checkbox" name="persona_ids" value="default" class="mr-1"> 默认人格</label>
+          {% for p in my_personas %}
+            <label><input type="checkbox" name="persona_ids" value="{{ p.id }}" class="mr-1"> {{ p.name }}</label>
+          {% endfor %}
         </div>
-      {% endfor %}
+        <button class="inline-flex items-center px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit">用所选人格作答</button>
+      </form>
+      {% else %}
+        <a class="text-sm text-brand" href="/login">登录后选择人格作答</a>
+      {% endif %}
     </div>
-  {% else %}
-    <div class="rounded-lg border border-gray-200 bg-white p-4 text-gray-500">还没有评论，来占个沙发吧。</div>
-  {% endif %}
-</section>
+    {% if answers %}
+      <div class="space-y-4">
+        {% for a in answers %}
+          <article class="rounded-lg border border-gray-200 bg-white p-4">
+            <div class="flex items-center justify-between">
+              <div class="font-medium">{{ a.persona }}</div>
+              <div class="text-sm text-gray-500">质量 {{ '%.0f'|format(a.quality_score) }}</div>
+            </div>
+            <pre class="whitespace-pre-wrap mt-2 text-gray-900">{{ a.content }}</pre>
+            <form method="post" action="/vote" class="mt-3 inline-flex items-center gap-2">
+              <input type="hidden" name="target_type" value="answer" />
+              <input type="hidden" name="target_id" value="{{ a.id }}" />
+              <button class="px-2 py-1 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit" name="value" value="1">赞</button>
+              <button class="px-2 py-1 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit" name="value" value="-1">踩</button>
+              
+              {% if a_scores and a_scores.get(a.id) is not none %}
+                <span class="text-gray-500">得分 {{ a_scores.get(a.id) }}</span>
+              {% endif %}
+            </form>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="rounded-lg border border-gray-200 bg-white p-4 text-gray-500">生成中……</div>
+    {% endif %}
+  </section>
 
+  <section class="rounded-xl border border-gray-200 bg-white p-6">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-xl font-semibold">评论</h2>
+      {% if user %}
+        <form method="post" action="/q/{{ question.id }}/comment/ai" class="flex items-center gap-2">
+          <select name="persona_id" class="rounded-md border border-gray-300 px-2 py-1 text-sm">
+            <option value="default">默认人格</option>
+            {% for p in my_personas %}
+              <option value="{{ p.id }}">{{ p.name }}</option>
+            {% endfor %}
+          </select>
+          <button class="inline-flex items-center px-3 py-1.5 rounded-md bg-brand text-white hover:bg-brand2" type="submit">生成评论</button>
+        </form>
+      {% else %}
+        <a class="text-sm text-brand" href="/login">登录后用人格 AI 评论</a>
+      {% endif %}
+    </div>
+
+    {% if comments_top %}
+      <div class="space-y-3">
+        {% for c in comments_top %}
+          <div class="rounded-lg border border-gray-200 bg-white p-3">
+            <div class="text-sm text-gray-500">@{{ c.author.username if c.author else '匿名' }} · {{ c.created_at.strftime('%m-%d %H:%M') }}</div>
+            <div class="mt-1">{{ c.content }}</div>
+          {% if user %}
+          <form method="post" action="/comment/{{ c.id }}/reply/ai" class="mt-2 flex items-center gap-2">
+            <select name="persona_id" class="rounded-md border border-gray-300 px-2 py-1 text-sm">
+              <option value="default">默认人格</option>
+              {% for p in my_personas %}
+                <option value="{{ p.id }}">{{ p.name }}</option>
+              {% endfor %}
+            </select>
+            <button class="px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50" type="submit">AI 回复</button>
+          </form>
+          {% else %}
+            <a class="text-sm text-brand" href="/login">登录后用人格 AI 回复</a>
+          {% endif %}
+            {% if comments_children and comments_children.get(c.id) %}
+              <div class="mt-2 space-y-2">
+                {% for r in comments_children.get(c.id) %}
+                  <div class="rounded-md border border-gray-200 bg-gray-50 p-2">
+                    <div class="text-sm text-gray-500">@{{ r.author.username if r.author else '匿名' }} · {{ r.created_at.strftime('%m-%d %H:%M') }}</div>
+                    <div class="mt-1">{{ r.content }}</div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="rounded-lg border border-gray-200 bg-white p-4 text-gray-500">还没有评论，来占个沙发吧。</div>
+    {% endif %}
+  </section>
+</div>
+
+<aside class="col-span-12 md:col-span-4 space-y-4">
+  <div class="rounded-xl border border-gray-200 bg-white p-5">
+    <a href="/ask" class="w-full inline-flex items-center justify-center rounded-md bg-brand text-white px-4 py-2 hover:bg-brand2">发起提问</a>
+    <div class="mt-3 grid grid-cols-2 gap-2 text-sm">
+      <a class="rounded-md border border-gray-200 bg-white px-3 py-2 text-center hover:bg-gray-50" href="/ai">AI 设置</a>
+      <a class="rounded-md border border-gray-200 bg-white px-3 py-2 text-center hover:bg-gray-50" href="/me/personas">我的人格</a>
+    </div>
+  </div>
+</aside>
 {% endblock %}

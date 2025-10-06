@@ -23,6 +23,7 @@ from .db import Base
 class VoteTarget(str, Enum):
     question = "question"
     answer = "answer"
+    persona = "persona"
 
 
 class User(Base):
@@ -125,3 +126,16 @@ class Persona(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     owner: Mapped[User] = relationship("User", back_populates="personas")
+
+
+class PersonaHub(Base):
+    __tablename__ = "persona_hub"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"))
+    name: Mapped[str] = mapped_column(String(50))
+    prompt: Mapped[str] = mapped_column(Text)
+    uses_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    owner: Mapped[User] = relationship("User")

@@ -1,29 +1,37 @@
 {% extends "base.html" %}
 {% block title %}提问 · Syno{% endblock %}
 {% block content %}
-<div class="max-w-2xl">
-  <h1 class="text-2xl font-semibold mb-4">提问</h1>
-  {% if llm_cfg and llm_cfg.get('provider') %}
-    <div class="mb-4 text-sm text-gray-600">
-      当前 AI：<span class="font-medium">{{ llm_cfg.get('provider') }}</span>
-      {% if llm_cfg.get('provider') != 'fake' %} · 模型 <span class="font-medium">{{ llm_cfg.get('model','') }}</span>{% else %}
-        · Fake 演示模式（到 AI 设置切换）
-      {% endif %}
-      · <a class="text-brand" href="/ai">AI 设置</a>
-    </div>
-  {% else %}
-    <div class="mb-4 text-sm text-gray-600">默认 Fake 演示模式。你可以在 <a class="text-brand" href="/ai">AI 设置</a> 中配置真实模型与密钥。</div>
-  {% endif %}
-  <form class="space-y-4" method="post" action="/ask">
-    <div>
-      <label class="block text-sm text-gray-600 mb-1">标题</label>
-      <input class="w-full rounded-lg border-gray-300 focus:border-brand focus:ring-brand" type="text" name="title" placeholder="一句话概括你的问题" required />
-    </div>
-    <div>
-      <label class="block text-sm text-gray-600 mb-1">详情（可选）</label>
-      <textarea class="w-full rounded-lg border-gray-300 focus:border-brand focus:ring-brand" name="content" rows="6" placeholder="补充描述、上下文和期望答案"></textarea>
-    </div>
-    <button class="inline-flex items-center px-4 py-2 rounded-md bg-brand text-white hover:opacity-90" type="submit">发布并生成答案</button>
-  </form>
-</div>
+<section class="col-span-12 md:col-span-8">
+  <div class="rounded-xl border border-gray-200 bg-white p-6">
+    <h1 class="text-2xl font-semibold mb-4">提问</h1>
+    {% if llm_cfg and llm_cfg.get('provider') %}
+      <div class="mb-4 text-sm text-gray-600">
+        当前 AI：<span class="font-medium">{{ llm_cfg.get('provider') }}</span>
+        {% if llm_cfg.get('provider') != 'fake' %} · 模型 <span class="font-medium">{{ llm_cfg.get('model','') }}</span>{% else %}
+          · Fake 演示模式（到 AI 设置切换）
+        {% endif %}
+        · <a class="text-brand" href="/ai">AI 设置</a>
+      </div>
+    {% else %}
+      <div class="mb-4 text-sm text-gray-600">默认 Fake 演示模式。你可以在 <a class="text-brand" href="/ai">AI 设置</a> 中配置真实模型与密钥。</div>
+    {% endif %}
+    <form class="space-y-4" method="post" action="/ask">
+      <div>
+        <label class="block text-sm text-gray-600 mb-1">标题</label>
+        <input class="w-full rounded-lg border-gray-300 focus:border-brand focus:ring-brand" type="text" name="title" placeholder="一句话概括你的问题" required />
+      </div>
+      <div>
+        <label class="block text-sm text-gray-600 mb-1">详情（可选）</label>
+        <textarea class="w-full rounded-lg border-gray-300 focus:border-brand focus:ring-brand" name="content" rows="8" placeholder="补充描述、上下文和期望答案"></textarea>
+      </div>
+      <button class="inline-flex items-center px-4 py-2 rounded-md bg-brand text-white hover:bg-brand2" type="submit">发布并生成答案</button>
+    </form>
+  </div>
+</section>
+<aside class="col-span-12 md:col-span-4 space-y-4">
+  <div class="rounded-xl border border-gray-200 bg-white p-5">
+    <div class="text-sm text-gray-500">提示</div>
+    <div class="mt-2 text-gray-700">发布后系统将并发调用多个人格与共识引擎，稍后刷新即可看到结果。</div>
+  </div>
+</aside>
 {% endblock %}
